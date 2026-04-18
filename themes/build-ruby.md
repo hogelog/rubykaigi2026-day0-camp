@@ -52,18 +52,18 @@ make install
 
 rbenv / chruby / asdf を使っている場合は、それぞれの慣習に合わせて `~/.rubies/ruby-master` のようなパスを prefix に指定する。
 
-### 4. デフォルト ruby として使う
+### 4. ビルドした ruby を使う
 
-mise の場合(推奨):
+master ビルドはどう転ぶか分からない代物なので、グローバルの常用 Ruby に据えるのはかなりチャレンジング。普段は安定版を使い、「触りたいときだけシェルで切り替える」くらいがちょうどよい。
+
+mise の場合(シェルだけで一時的に使う):
 
 ```sh
-mise use -g ruby@master    # グローバル
-# あるいはプロジェクト単位で
-mise use ruby@master
+mise shell ruby@master
 ruby -v    # => ruby 4.x.0dev (...) ...
 ```
 
-`mise.toml` / `.tool-versions` に `ruby = "master"` と書いておけば、合宿後も切り替えが簡単。
+実験用ディレクトリだけで使うなら `mise.toml` に `ruby = "master"` を書いておくとそのディレクトリ配下でのみ切り替わる。
 
 rbenv の場合(例):
 
