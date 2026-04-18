@@ -44,11 +44,15 @@
 
 ## 参考リンク
 
+Ruby の文字列は複数のコミッタが関わる領域。STORES では ima1zumi がエンコーディング・文字幅計算の実装や発表を継続しており、ko1 は RString レイアウト・GC と絡むメモリ最適化を担当している。
+
 - Ruby 公式ドキュメント `String`: https://docs.ruby-lang.org/ja/latest/class/String.html
 - Ruby 公式ドキュメント `Encoding`: https://docs.ruby-lang.org/ja/latest/class/Encoding.html
 - ruby/ruby `string.c`: https://github.com/ruby/ruby/blob/master/string.c
 - ruby/ruby `include/ruby/internal/core/rstring.h`: https://github.com/ruby/ruby/blob/master/include/ruby/internal/core/rstring.h
-- 過去 RubyKaigi の Encoding / String 関連発表アーカイブ(成瀬さん、ko1 さん、peterzhu2118 さんなど)
+- **ima1zumi の RubyKaigi 発表**: https://rubykaigi.org/2025/presentations/ima1zumi.html など。Encoding / 文字幅まわりの最新動向
+- **ko1 の RubyKaigi 発表**: https://rubykaigi.org/2025/presentations/ko1.html など。RString / GC / 並行性の観点
+- 歴史的経緯としては成瀬さん(M17N)や peterzhu2118 さん(Variable Width Allocation)の発表も合わせて追うとよい
 
 ## アウトプットのヒント
 
