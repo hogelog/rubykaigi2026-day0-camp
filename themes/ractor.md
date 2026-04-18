@@ -6,11 +6,14 @@ Ractor は Ruby 3.0 で導入された、スレッドよりも安全な並行処
 
 RubyKaigi では毎年のように Ractor 関連のアップデートや、Ractor を前提にした新機能・新ライブラリの発表がある。Rails では普段使わないが、仕組みを知っておくと本編トークの解像度が一気に上がる。
 
+> **注意**: Ractor の API は Ruby 3.5 で大きく刷新された(`Ractor#take` / `Ractor.yield` / `Ractor.receive_if` の削除、`Ractor::Port` の導入、`Ractor#join` / `Ractor#value` の追加など)。古いブログ記事・書籍のコード例は旧 API 前提のものが多いので、最新の Ruby で動かすときは下記の参考リンクを先に読むこと。
+
 ## 触って分かると嬉しいこと
 
 - Ractor 間ではオブジェクトがどう渡るのか(copy / move / shareable の違い)
 - 何が shareable で何がそうでないのか
-- `Ractor.receive` / `Ractor.yield` の send-receive と take の使い分け
+- `Ractor::Port` を使った送受信(`Ractor#send` / `Ractor::Port#receive`)、終了待機の `Ractor#join`、結果取得の `Ractor#value` の使い分け
+- 旧 API(`take` / `yield`)から Port ベース設計へ置き換えられた背景
 - なぜ「experimental」警告が出続けているのか、現時点の制約
 
 ## 取り組みアイデア(難易度順)
@@ -30,22 +33,25 @@ RubyKaigi では毎年のように Ractor 関連のアップデートや、Racto
 ### 上級
 
 - 既存の gem を Ractor 対応させる(`Ractor.make_shareable` を効かせるために const を frozen にするなど)
-- `Ractor::Port` / `Ractor::Selector` など新しめの API を試す(Ruby バージョン要確認)
+- `Ractor::Port` を使った複数 Ractor 間の通信パターンを書く(旧 `take` / `yield` ベースから書き換え)
 - Ractor で共有できない値を渡そうとしたときのエラーメッセージから、処理系のどこで判定しているかを追いかける
 
 ## 予想される詰まりどころ
 
 - ブロック内で外のローカル変数を参照してしまいエラー
 - 共有オブジェクトが frozen 化されて、他のコードが壊れる
-- `Ractor.yield` と `Ractor#take` がブロッキングであることによるデッドロック
+- Port の receive がブロッキングであることによるデッドロック
 - デバッグ時の `puts` 出力がどの Ractor からかわからなくなる問題
+- ネットで見つかるサンプルが旧 API(`take` / `yield`)前提でそのままでは動かない
 
 ## 参考リンク
 
+Ractor は設計者である ko1(笹田耕一、STORES)が中心となって開発している領域。STORES Product Blog の解説が最新 API へのキャッチアップに最適。
+
+- **Ractor API の刷新について(ko1, 2025-06-24)**: https://product.st.inc/entry/2025/06/24/110606 — Ruby 3.5 での `take` / `yield` 廃止と `Ractor::Port` / `Ractor#join` / `Ractor#value` 導入の背景と使い方を設計者自身が解説。**まずここから読むと良い**
 - Ruby 公式ドキュメント: https://docs.ruby-lang.org/ja/latest/class/Ractor.html
 - Ractor 設計ドキュメント(ruby/ruby): https://github.com/ruby/ruby/blob/master/doc/ractor.md
-- NEWS for Ruby 3.0 の Ractor セクション: https://www.ruby-lang.org/en/news/2020/12/25/ruby-3-0-0-released/
-- 過去 RubyKaigi の Ractor 関連発表(Koichi Sasada 氏など)のアーカイブを漁る
+- ko1 の RubyKaigi 過去発表: https://rubykaigi.org/2025/presentations/ko1.html など各年のアーカイブを辿ると Ractor の変遷がそのまま追える
 
 ## アウトプットのヒント
 
