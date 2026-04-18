@@ -49,7 +49,7 @@ TypeProf は mame(遠藤侑介、STORES)が作者・メンテナ。あわせて 
 - Steep: https://github.com/soutaro/steep
 - gem_rbs_collection: https://github.com/ruby/gem_rbs_collection
 - RBS 入門(Ruby 公式ドキュメント): https://github.com/ruby/rbs/blob/master/docs/syntax.md
-- **mame の RubyKaigi 過去発表**: https://rubykaigi.org/2024/presentations/mametter.html など各年のアーカイブ(RubyKaigi サイトでのハンドルは `mametter`)。TypeProf の設計思想・内部実装の進化を追える
+- **mame の RubyKaigi 2025 発表 "Writing Ruby Scripts with TypeProf"**: https://rubykaigi.org/2025/presentations/mametter.html — TypeProf v0.30 で Ruby 構文をフル対応させた話。現行 TypeProf の立ち位置が分かる(RubyKaigi サイトでのハンドルは `mametter`。各年のアーカイブも辿れる)
 
 ## アウトプットのヒント
 
