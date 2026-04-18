@@ -38,18 +38,32 @@ cd ruby
 
 ### 3. configure & build
 
-`~/.rubies/ruby-master` のようにインストール先を分けておくのがおすすめ(chruby / ruby-install / rbenv などと併用しやすい)。
+インストール先を分けておくのがおすすめ。STORES 社内では mise を Ruby を含む開発ツールの基本にしているので、`mise` の管理ディレクトリ配下に prefix を切ると後段で扱いやすい。
+
+mise を使う場合(推奨):
 
 ```sh
+PREFIX="$HOME/.local/share/mise/installs/ruby/master"
 ./autogen.sh
-./configure --prefix=$HOME/.rubies/ruby-master --disable-install-doc
+./configure --prefix="$PREFIX" --disable-install-doc
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 make install
 ```
 
+rbenv / chruby / asdf を使っている場合は、それぞれの慣習に合わせて `~/.rubies/ruby-master` のようなパスを prefix に指定する。
+
 ### 4. デフォルト ruby として使う
 
-rbenv / chruby / asdf など、普段使っているバージョンマネージャの流儀に合わせて登録する。
+mise の場合(推奨):
+
+```sh
+mise use -g ruby@master    # グローバル
+# あるいはプロジェクト単位で
+mise use ruby@master
+ruby -v    # => ruby 4.x.0dev (...) ...
+```
+
+`mise.toml` / `.tool-versions` に `ruby = "master"` と書いておけば、合宿後も切り替えが簡単。
 
 rbenv の場合(例):
 
@@ -57,7 +71,7 @@ rbenv の場合(例):
 ln -s $HOME/.rubies/ruby-master $(rbenv root)/versions/master
 rbenv rehash
 rbenv shell master
-ruby -v    # => ruby 3.x.0dev (...) ...
+ruby -v
 ```
 
 ## よくあるハマりどころ
@@ -65,7 +79,7 @@ ruby -v    # => ruby 3.x.0dev (...) ...
 - **OpenSSL が見つからない** — macOS は `--with-openssl-dir=$(brew --prefix openssl@3)` を configure に付ける
 - **bison のバージョン違い** — macOS 同梱の bison では通らない。Homebrew 版を PATH に
 - **ccache が邪魔して再ビルドが変** — 疑わしいときは `make clean` から
-- **rbenv の shim が古い ruby を指している** — `rbenv rehash` を忘れずに
+- **mise / rbenv の shim が古い ruby を指している** — `mise reshim` / `rbenv rehash` を忘れずに
 
 ## 追加で試してみたいこと
 
@@ -78,6 +92,7 @@ ruby -v    # => ruby 3.x.0dev (...) ...
 
 - Building Ruby(公式): https://github.com/ruby/ruby/blob/master/doc/contributing/building_ruby.md
 - ruby/ruby: https://github.com/ruby/ruby
+- mise: https://mise.jdx.dev/
 - chruby: https://github.com/postmodern/chruby
 - rbenv: https://github.com/rbenv/rbenv
 - ruby-build: https://github.com/rbenv/ruby-build
