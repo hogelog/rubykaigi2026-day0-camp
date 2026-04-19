@@ -104,3 +104,36 @@ RubyKaigi 2026 Day 0 合宿の予習として、Ruby 4.0 で刷新された Ract
 - **Ractor は 4 コアでスケール**するが、今回の計測では **1.4× 程度**で線形の 4× には届かない。warmup を 3 回入れてもまだコード初期化(メソッド解決・バイトコードキャッシュなど)の影響が残っている気配。仕事量をもっと増やすと理論値に近づくはず(今回は合計 ~0.5 秒規模なので相対誤差が効く)。
 - **Ractor への引数渡し(`Ractor.new(lo, hi) { |l, h| ... }`)**が、`send` より明快。ワーカに渡すデータが 1 回で済むならこれが一番読みやすい。
 - `Ractor#value` の配列 `map(&:value)` で集計できるので、Thread の `map(&:value)` と書き味が揃う。**旧 `take` と違い、同じ Ractor に対して `value` を 2 回呼ぶのは禁止**(2 回目は `Ractor::Error`)。
+
+## 06. Ractor pool パターンと Port の所有制約
+
+`work/ractor/06_pool.rb` は 4 ワーカに 20 ジョブを round-robin で配るシンプルなプール。
+
+**最初にハマった落とし穴**: Port を main で 1 つ作ってワーカに渡し、「workers 全員が同じ job_port を食い合う」 旧来の queue パターンを書いたら、
+
+```
+Ractor::Port#receive: only allowed from the creator Ractor of this port (Ractor::Error)
+```
+
+で全ワーカが即死。**`Ractor::Port#receive` は作成 Ractor にしか許されない**(= Port は所有物)。send は誰からでも可。つまり Port は「単独 consumer、複数 producer」向け。
+
+これを踏まえた実際のプールの組み方:
+
+| 向き | 道具 |
+| --- | --- |
+| main → 特定 worker(仕事を配る) | `worker.send(job)` + ワーカ側 `Ractor.receive`(各 Ractor の組み込み mailbox) |
+| worker → main(結果を返す) | `result_port.send(result)`(main 所有の `Ractor::Port`) |
+| 全部終わったことの合図 | main から各 worker に `STOP` シンボルを `send` |
+
+結果:
+
+```
+per-worker job count: [5, 5, 5, 5]
+pool done in 0.075 sec
+```
+
+気づき:
+- Ractor には **デフォルトの mailbox(`Ractor.receive` / `Ractor#send`)** と **明示的な `Ractor::Port`** の 2 系統がある。どちらも「一人の consumer, 複数の producer」なのは共通。
+- **Many-to-one(例: 複数ワーカから main へ結果集約)** は `Ractor::Port` 一つで綺麗に書ける。
+- **One-to-many(例: job キューを全ワーカが食い合う)** は **直接は書けない**。ディスパッチャを main 側に置いて `worker.send` で投げ分けるか、間に「ディスパッチャ Ractor」を立てて select する設計になる。
+- 「**ワーカプール=共有キュー**」の直感は旧 `Ractor.yield`/`take` ベースの blog の影響で残りがちだが、Ruby 4.0 の API では **ワーカ数分の mailbox に送り分ける**のが素直。
