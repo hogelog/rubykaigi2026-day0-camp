@@ -58,3 +58,36 @@ end
 - `--show-errors` を付けないと TypeProf はエラーも「RBS を埋めるヒント」として
   使って推論するだけで、標準出力には出さない。**エラーを見たい時だけ明示する
   オプション**という思想。
+
+## 02. rbs prototype rb / runtime と typeprof の比較
+
+同じ `01_basic.rb` に対して 3 つの RBS 生成ツールを並べた。
+
+| ツール | 入力の読み方 | `Counter#add` の型 | `double(x)` の型 | `attr_reader count` の型 | コメント |
+| --- | --- | --- | --- | --- | --- |
+| `rbs prototype rb` | **AST を静的に** 読む(実行しない) | `(untyped n) -> self` | `(untyped x) -> untyped` | `untyped` | 末尾式の `self` を見て戻り値 `self` を拾うぐらいの軽さ |
+| `rbs prototype runtime` | **ロードしてからリフレクションで** 見る | `(untyped n) -> untyped` | (トップレベル関数は見ない) | `untyped` | `Method#parameters` 経由なので型情報ゼロ、ただしクラス階層と public/private は正確 |
+| `typeprof` | **抽象実行** で型を伝播させる | `(Integer) -> Counter` | `(Integer) -> Integer` | `-> Integer` | 引数/戻り値/インスタンス変数の型が実際に出る |
+
+気づき:
+
+- **「型を埋める」のは typeprof だけ**。rbs prototype 系は `untyped` の雛形を吐くのが仕事。
+  人間が埋める前提で、「クラス名・メソッド名・引数名・public/private」を先取りしてくれる
+  下書きジェネレータ。
+- `rbs prototype rb` は **実行しない**ので、副作用のあるスクリプトでも安全。反面、
+  require で拾うような動的クラスは見えない。
+- `rbs prototype runtime` は **ロードが必要**。今回は `--require-relative ./work/typeprof/01_basic`
+  を付けたが、この副作用でスクリプトの `puts` 出力がそのまま漏れる。本番相当の
+  依存を全部 require することになるので、Rails アプリなどで走らせると重い。
+  逆に **C 拡張やメタプロで動的に生えるメソッドも見える**のが利点。
+- `rbs prototype rb` の `Counter#add: (untyped n) -> self` は面白い: **メソッドの最後の式が
+  `self`** という**構文的な事実**だけで戻り値 `self` を付けられる。typeprof は実行を
+  伝播させて `Counter` を返すと書くので、**"self 型"を保てるのはむしろ rbs prototype rb**
+  という逆転がある。
+- トップレベルの関数(`double` など)は **`rbs prototype runtime` からは見えない**
+  (`Object` の private method だが CLI に渡したクラス名しか出さないため)。
+  一方で `rbs prototype rb` は AST から見える。**ツールの守備範囲の違い**。
+- 使い分けの肌感:
+  - **新規コードに RBS 雛形を付けたい** → `rbs prototype rb` で枠組みを作り、型を手で埋める
+  - **既存 gem の型を書き始めたい**(DSL で動的にメソッドが生えるなど) → `rbs prototype runtime`
+  - **本気で型を推論させて型チェックしたい** → `typeprof`(ただし呼び出し側のコードが必要)
