@@ -26,11 +26,13 @@ Ubuntu / Debian:
 
 ```sh
 sudo apt-get install -y build-essential autoconf bison \
-  libssl-dev libreadline-dev zlib1g-dev libyaml-dev libffi-dev libgmp-dev \
-  rustc
+  libssl-dev libreadline-dev zlib1g-dev libyaml-dev libffi-dev libgmp-dev
 ```
 
-`rustc` は YJIT / ZJIT を有効にしたビルドをするのに必要。YJIT は 1.58 以上、ZJIT は 1.85 以上が要る(ZJIT は Rust 2024 edition を使っているため)。どちらも入れておけば configure が勝手に両方有効化し、summary に `YJIT support: yes` / `ZJIT support: yes` と並ぶ。apt 版 `rustc` が ZJIT 側に届かない distro では [rustup](https://rustup.rs/) を使う。
+`rustc` は YJIT / ZJIT を有効にしたビルドをするのに必要。YJIT は 1.58 以上、ZJIT は 1.85 以上が要る(ZJIT は Rust 2024 edition を使っているため)。どちらも入れておけば configure が勝手に両方有効化し、summary に `YJIT support: yes` / `ZJIT support: yes` と並ぶ。
+
+- **macOS**: 上記の `brew install ... rust` で入る Homebrew 版は常時最新なのでそのまま OK
+- **Linux**: [rustup](https://rustup.rs/) でツールチェインを入れるのが安全(最新 stable が入るので ZJIT の 1.85 以上を自動で満たす)。distro の apt 版 `rustc` で 1.85 以上が入る世代なら `apt install rustc` でも可だが、気づかず ZJIT が無効のまま進むのを避けたいなら rustup 経由を推奨
 
 ### 2. ソースを clone する
 
