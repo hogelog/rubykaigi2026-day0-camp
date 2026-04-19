@@ -8,6 +8,17 @@ RubyKaigi では毎年のように Ractor 関連のアップデートや、Racto
 
 > **注意**: Ractor の API は Ruby 4.0 で大きく刷新された(`Ractor#take` / `Ractor.yield` / `Ractor.receive_if` の削除、`Ractor::Port` の導入、`Ractor#join` / `Ractor#value` の追加など)。古いブログ記事・書籍のコード例は旧 API 前提のものが多いので、最新の Ruby で動かすときは下記の参考リンクを先に読むこと。
 
+### 旧 API → 新 API の書き換え早見表
+
+| 旧(Ruby 3 系の blog によくある書き方) | 新(Ruby 4.0) |
+| --- | --- |
+| `r = Ractor.new { compute }; r.take` | `r = Ractor.new { compute }; r.value` |
+| producer が `Ractor.yield(x)` / main が `r.take` で拾う | producer が `port.send(x)` / consumer が `port.receive` |
+| `Ractor.select(r1, r2)`(Ractor を待つ) | `Ractor.select(port1, port2)`(Port を待つ) |
+| `Ractor.receive_if { ... }` | Port を用途別に分けて使う |
+
+旧 API は非推奨ではなく**存在しない**(`NameError` / `NoMethodError`)ので、見つけたサンプルは上の対応で機械的に読み替える。
+
 ## 触って分かると嬉しいこと
 
 - Ractor 間ではオブジェクトがどう渡るのか(copy / move / shareable の違い)
@@ -26,7 +37,7 @@ RubyKaigi では毎年のように Ractor 関連のアップデートや、Racto
 
 ### 中級
 
-- CPU バウンドな処理(例: フラクタル描画・素数列挙・画像変換)を Ractor で並列化して、Thread 版とのスループットを比較する
+- CPU バウンドな処理(例: フラクタル描画・素数列挙・画像変換)を Ractor で並列化して、Thread 版とのスループットを比較する(純 Ruby の CPU 処理では GVL のため **Thread は serial より遅くなる**のが典型。「速くならない」ではなく「負ける」数字が出るはず、を事前に知っておくと結果を読み違えない)
 - Ractor pool パターンを自分で実装する(ワーカ Ractor を N 個作って仕事を配る)
 - Pipeline パターン: 「読み込み → 変換 → 書き込み」を Ractor で段階的に繋ぐ
 
@@ -41,7 +52,10 @@ RubyKaigi では毎年のように Ractor 関連のアップデートや、Racto
 - ブロック内で外のローカル変数を参照してしまいエラー
 - 共有オブジェクトが frozen 化されて、他のコードが壊れる
 - Port の receive がブロッキングであることによるデッドロック
+- `Ractor::Port#receive` は**作成した Ractor からしか呼べない**(他 Ractor からは `Ractor::Error`)。N 個のワーカが 1 つの共有 job port を食い合う旧来の queue パターンは書けないので、ワーカへの配布は `Ractor#send` + 受け側の `Ractor.receive`(各 Ractor の組み込み mailbox)で行い、結果集約だけを main 所有の `Ractor::Port` で受けるのが定石
+- `Ractor.make_shareable(proc)` は Proc の `self` が shareable でないと `Ractor::IsolationError` で弾かれる。トップレベルの lambda の self は main の Object(shareable でない)なので、**純粋関数に見える Proc でも shareable 化は通らないことがある**
 - デバッグ時の `puts` 出力がどの Ractor からかわからなくなる問題
+- Ractor 内で未捕捉の例外が起きると、main が `#value` で拾う前に `#<Thread:... terminated with exception ...>` が STDERR に噴き出す(main 側で rescue していても出る)
 - ネットで見つかるサンプルが旧 API(`take` / `yield`)前提でそのままでは動かない
 
 ## 参考リンク
