@@ -415,3 +415,95 @@ IRB は Reline の auto_indent_proc に **ripper/prism ベースの実パーサ*
 **ruby-lex.rb で Ripper を回して token 単位**で open/close を数えるので、
 `"end in string"` のような文字列中の `end` を無視できる。**Reline の API は
 汎用で、Ruby らしさは IRB 側の proc 実装が担っている**という分業。
+
+## 08. IRB の式評価パイプライン (`11_pipeline_probe.rb`)
+
+`TracePoint(:call)` で IRB 関連メソッドだけフィルタして、1 本の入力 (`1 + 2`) が
+どう流れるかを追った。骨格:
+
+```
+IRB.start
+└─ Irb#run                                # SIGINT trap + catch(:IRB_EXIT) + eval_input
+   └─ Irb#eval_input                      # 本体ループ
+      ├─ Irb#configure_io                 # Reline に check_termination / dynamic_prompt を接続
+      └─ Irb#each_top_level_statement
+         └─ loop:
+            ├─ Irb#readmultiline          # Reline 経由で 1 ユニット読む
+            │  ├─ generate_prompt
+            │  └─ read_input_nomultiline / read_input  # 実際の gets
+            ├─ Irb#command?              (事前チェック) -> parse_input
+            ├─ Irb#parse_input
+            │  └─ Context#parse_input    # コマンド vs 式を判定
+            │                            # Statement::{Command|Expression|EmptyInput|IncorrectAlias} を返す
+            └─ Context#evaluate(statement, line_no)
+               ├─ (Expression)  Context#evaluate_expression
+               │                 └─ Workspace#evaluate
+               │                     └─ eval(code, @binding, path, line_no)
+               │                 set_last_value   # `_` にも結果を束縛
+               │                 output_value    # inspect_last_value を puts
+               └─ (Command)     Statement#command_class.execute(ctx, arg)
+                                 # 戻り値は捨てる。suppresses_echo? = true
+```
+
+### 8.1 Statement の 4 系統
+
+`lib/irb/statement.rb` に定義:
+
+| Statement | is_assignment? | suppresses_echo? | 発火条件 |
+| --- | --- | --- | --- |
+| `EmptyInput` | false | **true** | 入力が空行 / `\n` のみ |
+| `Expression` | 動的(Ripper で判定) | `;\s*\z` なら true | 通常の Ruby 式 |
+| `Command` | false | **true** | 行頭が組み込みコマンド名で、local 変数より優先される時 |
+| `IncorrectAlias` | false | true | エイリアス先が存在しない時の警告 |
+
+コマンドと式の判別ロジック(`context.rb:596` `parse_input`):
+
+- 行数が 1 行で
+- 先頭トークン名が `local_variables` に含まれていなくて
+- `is_assignment_expression` でも `==` / `=~` でもなくて
+- `Command.load_command(名前)` が非 nil で
+- `Command.execute_as_command?(名前, public_method:, private_method:)` が true
+
+を全て満たす時だけ `Statement::Command`。**同名のローカル変数があれば式扱い**に
+なるのは、`ls = 1; ls` と書いた時にコマンドではなく変数参照になってほしいから。
+
+### 8.2 Reline/IRB 境界の proc
+
+`Irb#configure_io` (irb.rb:302) で IO(Reline バックエンド)に 2 つの proc を注入:
+
+| proc | シグネチャ | 役割 |
+| --- | --- | --- |
+| `check_termination` | `->(code) { bool }` | 入力確定判定。Ripper で lex して open が 0 かつ構文 valid なら true |
+| `dynamic_prompt` | `->(lines) { [prompt, prompt, ...] }` | 各行のプロンプト生成(`%N(%m):001:0>` など) |
+
+**これが Reline と IRB の責任分界**: Reline は編集・補完・描画のインフラ、
+IRB は `check_termination` で Ruby 構文を知っている閉じ判定、
+`dynamic_prompt` で `PROMPT_C`(継続)/`PROMPT_S`(文字列継続)の出し分けを担う。
+
+### 8.3 piped stdin では nomultiline フォールバック
+
+`configure_io` の中で `@context.io.respond_to?(:check_termination)` を見ている。
+piped stdin では `StdioInputMethod` が選ばれて `check_termination` を持たないので、
+`readmultiline` → `read_input_nomultiline` に分岐する。この経路は RubyLex で
+**自前で** 入力の構文終端を判定する(`ruby-lex.rb:171 check_code_state`)。
+
+### 8.4 exit は例外ではなく `throw :IRB_EXIT`
+
+`command/force_exit.rb:12` で `throw :IRB_EXIT, true`。`Irb#run` 側で
+`catch(:IRB_EXIT)` しているのでループを綺麗に抜ける。**SystemExit で飛ばさない**のは、
+`binding.irb` のように別プログラムに埋め込まれている場合に上位コードまで
+殺さないため。
+
+### 8.5 `assignment_expression?` の実装
+
+`ruby-lex.rb:190` の `assignment_expression?` は **`Ripper.sexp` で S 式を作って
+末尾が assign 系かどうか**を見る。これが正しく判定できるから `x = 1` の時に
+`=> 1` を抑制する `--truncate-echo-on-assignment` が効く。古い IRB は正規表現で
+やっていて、`x = Foo.new do; y = 1; end` のような入れ子で誤動作した過去がある。
+
+### 8.6 Ripper → Prism への移行ポイント
+
+`ruby-lex.rb:172` `self.class.ripper_lex_without_warning` は名前どおり Ripper。
+Ruby 4.0 の IRB 1.16.0 ではまだ Ripper が現役。Prism 化は段階的に進行中で、
+RubyKaigi 2026 でもこの周辺の話題は十分ありうる(k0kubun / st0012 の 2024〜2025
+トーク文脈を継ぐ先)。
