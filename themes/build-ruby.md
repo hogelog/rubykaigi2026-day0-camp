@@ -30,7 +30,7 @@ sudo apt-get install -y build-essential autoconf bison \
   rustc
 ```
 
-`rustc` は YJIT を有効にしたビルドをするのに必要(1.58 以上)。入れておけば configure が勝手に YJIT を有効化する。Ubuntu の apt 版 `rustc` が古すぎる場合は [rustup](https://rustup.rs/) を使う。
+`rustc` は YJIT / ZJIT を有効にしたビルドをするのに必要。YJIT は 1.58 以上、ZJIT は 1.85 以上が要る(ZJIT は Rust 2024 edition を使っているため)。どちらも入れておけば configure が勝手に両方有効化し、summary に `YJIT support: yes` / `ZJIT support: yes` と並ぶ。apt 版 `rustc` が ZJIT 側に届かない distro では [rustup](https://rustup.rs/) を使う。
 
 ### 2. ソースを clone する
 
@@ -83,11 +83,13 @@ ruby -v
 - **bison のバージョン違い** — macOS 同梱の bison では通らない。Homebrew 版を PATH に
 - **ccache が邪魔して再ビルドが変** — 疑わしいときは `make clean` から
 - **mise / rbenv の shim が古い ruby を指している** — `mise reshim` / `rbenv rehash` を忘れずに
+- **ビルドツリーの `./ruby` を直叩きすると動かない** — `$LOAD_PATH` にインストール先の prefix が焼き込まれていて、`make install` 前はその場所が存在しない。`` `RubyGems' were not loaded.`` の警告と共に `require` が軒並み落ちる。試すのは `$PREFIX/bin/ruby` のほう
+- **`make install` で `debug` / `rbs` が skip される** — summary に `extensions not found or build failed debug-*.gem` / `rbs-*.gem` と出て、`rdbg` / `rbs` コマンドが bin/ から欠ける。install 完了後に `gem install <ruby-src>/gems/debug-*.gem` と `rbs-*.gem` を叩き直すと通る(インストール途中の ruby で C 拡張を組もうとして失敗している)
 
 ## 追加で試してみたいこと
 
 - `make test-all` / `make test-spec` を走らせる
-- `miniruby` と `ruby` の違いを体感する(`make miniruby` だけやってみる)
+- `miniruby` と `ruby` の違いを体感する(`make miniruby` だけやってみる)。`./miniruby -e 'puts $LOAD_PATH.size'` が `0`、`./miniruby -e 'puts Encoding.list.size'` が `12` を返す(インストール済みの ruby はそれぞれ `10` と `103`)。stdlib も拡張 encoding もまだ配られていない、「ruby 本体を組み上げるための最小 ruby」の姿が 2 行で見える
 - 気になる PR を `gh pr checkout` で持ってきてビルドして差分の挙動を確認する
 - `configure --with-debug-cflags='-O0 -g3'` でデバッグビルドして `lldb` / `gdb` で追う
 
