@@ -6,7 +6,7 @@ Ractor は Ruby 3.0 で導入された、スレッドよりも安全な並行処
 
 RubyKaigi では毎年のように Ractor 関連のアップデートや、Ractor を前提にした新機能・新ライブラリの発表がある。Rails では普段使わないが、仕組みを知っておくと本編トークの解像度が一気に上がる。
 
-> **注意**: Ractor の API は Ruby 3.5 で大きく刷新された(`Ractor#take` / `Ractor.yield` / `Ractor.receive_if` の削除、`Ractor::Port` の導入、`Ractor#join` / `Ractor#value` の追加など)。古いブログ記事・書籍のコード例は旧 API 前提のものが多いので、最新の Ruby で動かすときは下記の参考リンクを先に読むこと。
+> **注意**: Ractor の API は Ruby 4.0 で大きく刷新された(`Ractor#take` / `Ractor.yield` / `Ractor.receive_if` の削除、`Ractor::Port` の導入、`Ractor#join` / `Ractor#value` の追加など)。古いブログ記事・書籍のコード例は旧 API 前提のものが多いので、最新の Ruby で動かすときは下記の参考リンクを先に読むこと。
 
 ## 触って分かると嬉しいこと
 
