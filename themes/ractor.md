@@ -26,7 +26,7 @@ RubyKaigi では毎年のように Ractor 関連のアップデートや、Racto
 
 ### 中級
 
-- CPU バウンドな処理(例: フラクタル描画・素数列挙・画像変換)を Ractor で並列化して、Thread 版とのスループットを比較する
+- CPU バウンドな処理(例: フラクタル描画・素数列挙・画像変換)を Ractor で並列化して、Thread 版と比較する。**軽めの仕事量だと wall 時間の差は誤差に埋もれて体感しにくい**ので、速度比較よりまず **並列化しているか**を見るのが実験設計として素直。`Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID)` で CPU 時間を取り、**cpu / wall 比**を並べると、Thread は本数によらず比 ≈ 1(GVL のため 1 コアしか使えない)、Ractor は比 > 1(複数コアを使う)と並列化度の違いが直接観察できる
 - Ractor pool パターンを自分で実装する(ワーカ Ractor を N 個作って仕事を配る)
 - Pipeline パターン: 「読み込み → 変換 → 書き込み」を Ractor で段階的に繋ぐ
 
@@ -35,13 +35,17 @@ RubyKaigi では毎年のように Ractor 関連のアップデートや、Racto
 - 既存の gem を Ractor 対応させる(`Ractor.make_shareable` を効かせるために const を frozen にするなど)
 - `Ractor::Port` を使った複数 Ractor 間の通信パターンを書く(旧 `take` / `yield` ベースから書き換え)
 - Ractor で共有できない値を渡そうとしたときのエラーメッセージから、処理系のどこで判定しているかを追いかける
+- **wall 時間でもはっきり Ractor の方が速い**数字を出す。軽い仕事では wall 差は誤差に埋もれるので、仕事を秒オーダー以上に重くする・コア数に応じた分割粒度を揃える・warmup を十分取る、といった実験条件の調整自体がここでの主題
 
 ## 予想される詰まりどころ
 
 - ブロック内で外のローカル変数を参照してしまいエラー
 - 共有オブジェクトが frozen 化されて、他のコードが壊れる
 - Port の receive がブロッキングであることによるデッドロック
+- `Ractor::Port#receive` は**作成した Ractor からしか呼べない**(他 Ractor からは `Ractor::Error`)。N 個のワーカが 1 つの共有 job port を食い合う旧来の queue パターンは書けないので、ワーカへの配布は `Ractor#send` + 受け側の `Ractor.receive`(各 Ractor の組み込み mailbox)で行い、結果集約だけを main 所有の `Ractor::Port` で受けるのが定石
+- `Ractor.make_shareable(proc)` は Proc の `self` が shareable でないと `Ractor::IsolationError` で弾かれる。トップレベルの lambda の self は main の Object(shareable でない)なので、**純粋関数に見える Proc でも shareable 化は通らないことがある**
 - デバッグ時の `puts` 出力がどの Ractor からかわからなくなる問題
+- Ractor 内で未捕捉の例外が起きると、main が `#value` で拾う前に `#<Thread:... terminated with exception ...>` が STDERR に噴き出す(main 側で rescue していても出る)
 - ネットで見つかるサンプルが旧 API(`take` / `yield`)前提でそのままでは動かない
 
 ## 参考リンク
