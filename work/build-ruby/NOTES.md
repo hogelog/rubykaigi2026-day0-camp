@@ -255,3 +255,23 @@ gem install $HOME/repos/ruby/gems/rbs-4.0.2.gem
 - ZJIT は `--zjit-stats` を付けなくても `RubyVM::ZJIT.stats` が `compile_time_ns` / `compiled_iseq_count` 等の基本値を返す。YJIT の `runtime_stats` は `--yjit-stats` が無いと `nil`。API の粒度がここだけ揃っていない。
 - `.insns_compiled` は YJIT 固有で、引数に `iseq` / Method / Proc を取る(0 引数は `ArgumentError`)。master では `def self.insns_compiled(iseq)` に変わっている。「YJIT で何 insn 走った?」はこれで個別 iseq ごとに見るのが最新の流儀。
 - ビルドが正しく通っていれば **追加のフラグを一切付けなくても `--yjit` / `--zjit` で JIT は即動く**。`configure` の summary で YJIT/ZJIT が `yes` に出ていることを信じてよい。
+
+## 09. 気になる PR を試す(gh pr checkout → 差分ビルド → テスト)
+
+スクリプト: `09_pr_checkout.sh`。対象は #16770(+26/-0、test/ruby/test_string.rb のみ)。
+
+| フェーズ | 出力 / 時間 |
+|---|---|
+| `gh pr checkout 16770` | local に `test-string-getbyte-setbyte` ブランチが生える(PR 側の branch 名) |
+| HEAD 情報 | `c380619686 [Tests] Add test cases for String#getbyte and String#setbyte` |
+| 差分 `make -j` | **12.4s**(`Nothing to be done for 'note'.` — 何もリンクせず) |
+| `./ruby test/runner.rb ... -n "/test_(get|set)byte/"` | `4 tests, 34 assertions, 0 failures, 0 errors, 0 skips` |
+| `git checkout master` | master に戻るだけで切り戻し完了(ブランチは残る) |
+
+### 気づき
+
+- `gh pr checkout <num>` は **PR 側のブランチ名**(ここでは `test-string-getbyte-setbyte`)を local のブランチ名として使う。`pr/<num>` のような命名ではないので、出来たブランチを後で掃除するときは `git branch -D <name>` で自分で消す。
+- C 変更ゼロの PR でも incremental `make` に **12 秒**かかる。make が `.mk` / `common.mk` / `enc/*.so` などのタイムスタンプを 98,411 commit 分の tree にわたって総当たりしているため。gh PR checkout が触ったファイル(test のみ)は make 側には関係ないが、make は毎回全部見る。早い PC なら 5 秒前後で済むが、**「checkout = 即ビルド完了」ではない**ことは覚えておく。
+- ビルドされた ruby の version 文字列が `ruby 4.1.0dev (2026-04-18T11:17:31Z test-string-getbyt.. c380619686) +PRISM [x86_64-linux]` と、**branch 名と HEAD SHA を埋め込む**。これは PR を試している間に誤って system ruby で検証してしまう事故を `ruby -v` 一発で防げる、地味に嬉しい挙動。
+- 部分テスト実行は **`./ruby test/runner.rb test/ruby/xxx.rb -n "/pat/"`** 形式。`make test-all` を丸ごと走らせる必要はなく、合宿で PR を試す程度ならこれで十分。
+- 「`git checkout master` で戻る」は完璧な切り戻しで、worktree は何も汚れない。ビルド成果物も master 用がそのままキャッシュされているので、master に戻ってからの再ビルドは ~12s で済む。
