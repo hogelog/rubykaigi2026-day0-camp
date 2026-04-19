@@ -214,3 +214,22 @@ gem install $HOME/repos/ruby/gems/rbs-4.0.2.gem
 
 - `./ruby -v` から miniruby と同じく `+PRISM [x86_64-linux]`。`+GC` / `+YJIT` / `+ZJIT` のようなマーカーは出ない。system の Debian 4.0.2 は `+PRISM +GC` と出ていたので、`+GC` マーカーは modular GC framework 有効化時(`--enable-shared` との組み合わせ?)限定かもしれない。
 - `lib/ruby/4.1.0+1/x86_64-linux` のようにバージョンディレクトリに `+1` が付いている。これは ABI suffix(`include/ruby/internal/abi.h`)で、master の途中で ABI が割れた時の弁。stable リリースには付かない。
+
+## 07. mise 統合
+
+スクリプト: `07_mise_integration.sh`。`$PREFIX=$HOME/.local/share/mise/installs/ruby/master` に install しただけで、ここに **`mise install ruby@master` を走らせていない**状態で、mise から見えるかを確認する。
+
+| 経路 | 結果 |
+|---|---|
+| `mise list ruby` | **`ruby master`** と表示(installs/ 配下を直接拾う) |
+| `mise exec ruby@master -- ruby --version` | **通る**(activate 不要) |
+| `mise.toml` に `ruby = "master"` | **通る**(ただし `mise trust` が要る) |
+| `mise which ruby@master` | **失敗**(`is not a mise bin`、plugin 経由の install を要求) |
+| `mise shell ruby@master` | **失敗**(`mise is not activated in this shell session`) |
+
+### 気づき
+
+- **`mise install` は不要**。`$MISE_DATA_DIR/installs/ruby/<version>/bin/ruby` の layout さえ踏めば mise は「インストール済み」として扱う。ガイドが `PREFIX=$HOME/.local/share/mise/installs/ruby/master` を勧める理由がここではっきりした。
+- 一方 `mise which` と `mise shell` は「mise がちゃんと管理している扱いじゃないと動かない」経路で、少し期待を裏切る。**`mise exec` と `mise.toml` 経由なら問題なく切り替わる**のが実務的な答え。
+- `mise.toml` は新規作成直後は **`mise trust <path>`** が要る(security feature)。ガイドには触れられていない 1 行。
+- shell 切替派の人が `mise shell` でハマるので、合宿ガイドでは **`mise exec` または `mise.toml`** を前面に推すほうが安全。
