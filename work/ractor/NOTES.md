@@ -137,3 +137,30 @@ pool done in 0.075 sec
 - **Many-to-one(例: 複数ワーカから main へ結果集約)** は `Ractor::Port` 一つで綺麗に書ける。
 - **One-to-many(例: job キューを全ワーカが食い合う)** は **直接は書けない**。ディスパッチャを main 側に置いて `worker.send` で投げ分けるか、間に「ディスパッチャ Ractor」を立てて select する設計になる。
 - 「**ワーカプール=共有キュー**」の直感は旧 `Ractor.yield`/`take` ベースの blog の影響で残りがちだが、Ruby 4.0 の API では **ワーカ数分の mailbox に送り分ける**のが素直。
+
+## 07. 共有できない値を渡したときのエラー分類
+
+`work/ractor/07_unshareable.rb` で send できる / できないを横並びに。
+
+| ケース | 結果 |
+| --- | --- |
+| (a) `send(Mutex.new)` | **OK**(deep-copy が通る) |
+| (b) `send(STDOUT)` | **OK** |
+| (c) closure を持つ Proc | `TypeError: allocator undefined for Proc` |
+| (d) `make_shareable(-> (x) { x*2 })` | `Ractor::IsolationError: Proc's self is not shareable` |
+| (e) `Box` 越しに Array ivar | OK(Array が deep-copy される) |
+| (f) `Box` 越しに Mutex ivar | OK(ivar も deep-copy される) |
+| (g) `method(:puts).to_proc` | `TypeError: allocator undefined for Proc` |
+| (h) `send(Thread.new { ... })` | `TypeError: allocator undefined for Thread` |
+
+気づき:
+- **「Mutex は shareable にできないが send-copy はできる」** — 各 Ractor が独立した Mutex を持つだけなので安全、ただしロック共有の意味は消える。`make_shareable` で弾く / send で通す、という**検査タイミングの違い**を示している。
+- エラーが 2 系統に分かれる:
+  - **`TypeError: allocator undefined for X`**: そもそも allocate できないクラス(Proc, Thread, UnboundMethod など)。main 側の **deep-copy ステップ**で即死。
+  - **`Ractor::IsolationError`**: shareable 化の静的チェックで弾かれるケース。
+- **`make_shareable(proc)` は万能ではない**。**Proc の `self` が shareable でない**と通らない。トップレベル lambda の self は main の Object。shareable な定数クラスの特異メソッドや `Module#module_function` 経由で作った Proc だけが候補になる。
+- **STDOUT が send できる**のは IO としての特別扱い(writable な共有リソースは実運用では排他制御が要る)。ここは *できる* と *すべき* が一致しない典型例。
+
+道具の限界 / 次に見るべきもの:
+- どこで弾かれているかの実装は C 側。`rb_ractor_make_shareable`, `ractor_move`, `rb_ractor_copy` あたりを `ruby/ruby` の `ractor.c` で追うのが次の一歩。
+- send / make_shareable の検査は **grep の出発点として `ractor.c` の `obj_traverse_i` / `RB_OBJ_SHAREABLE_P`** が分かりやすい。
