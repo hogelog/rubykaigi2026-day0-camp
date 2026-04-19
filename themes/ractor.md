@@ -8,17 +8,6 @@ RubyKaigi では毎年のように Ractor 関連のアップデートや、Racto
 
 > **注意**: Ractor の API は Ruby 4.0 で大きく刷新された(`Ractor#take` / `Ractor.yield` / `Ractor.receive_if` の削除、`Ractor::Port` の導入、`Ractor#join` / `Ractor#value` の追加など)。古いブログ記事・書籍のコード例は旧 API 前提のものが多いので、最新の Ruby で動かすときは下記の参考リンクを先に読むこと。
 
-### 旧 API → 新 API の書き換え早見表
-
-| 旧(Ruby 3 系の blog によくある書き方) | 新(Ruby 4.0) |
-| --- | --- |
-| `r = Ractor.new { compute }; r.take` | `r = Ractor.new { compute }; r.value` |
-| producer が `Ractor.yield(x)` / main が `r.take` で拾う | producer が `port.send(x)` / consumer が `port.receive` |
-| `Ractor.select(r1, r2)`(Ractor を待つ) | `Ractor.select(port1, port2)`(Port を待つ) |
-| `Ractor.receive_if { ... }` | Port を用途別に分けて使う |
-
-旧 API は非推奨ではなく**存在しない**(`NameError` / `NoMethodError`)ので、見つけたサンプルは上の対応で機械的に読み替える。
-
 ## 触って分かると嬉しいこと
 
 - Ractor 間ではオブジェクトがどう渡るのか(copy / move / shareable の違い)
