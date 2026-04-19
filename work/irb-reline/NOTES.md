@@ -238,3 +238,86 @@ Helper methods
 
 - category を指定しないと `"No category"` セクションに入る(あまり見栄えよくない)。
 - HelperMethod は常に `"Helper methods"` セクション固定(category の概念がない)。
+
+## 06. Reline.readline で最小 REPL (`07_reline_repl.rb`, `08_reline_repl_pty.rb`)
+
+### 6.1 コアとなる 4 つの API
+
+| API | 型 | 役割 |
+| --- | --- | --- |
+| `Reline.readline(prompt, with_hist)` | `String \| nil` | 1 行入力。`nil` なら EOF(Ctrl-D) |
+| `Reline.readmultiline(prompt, with_hist) { \|buf\| done? }` | `String` | 改行で完了判定ブロックを呼ぶ複数行入力 |
+| `Reline.completion_proc = ->(input) { candidates }` | 書込 | Tab 補完の候補列挙 |
+| `Reline::HISTORY` | Array 的 | 履歴(`<<` / `last` / `clear` / `to_a`) |
+
+小さな REPL(`07_reline_repl.rb`)の要旨:
+
+```ruby
+Reline.completion_proc = ->(input) do
+  VOCAB.select { |w| w.start_with?(input) }   # 単純な前方一致
+end
+
+loop do
+  line = Reline.readline("mini> ", true)  # with_history=true で自動追加
+  break if line.nil?
+  # ... 評価 ...
+end
+```
+
+### 6.2 非対話環境での観察方法 (`08_reline_repl_pty.rb`)
+
+Reline は **端末(TTY)前提**なので piped stdin では本来の挙動にならない。
+対話テストを再現したければ **stdlib の `PTY.spawn`** を使う:
+
+```ruby
+PTY.spawn({ "TERM" => "xterm-256color" }, "ruby", script) do |r, w, pid|
+  inputs = ["help\r", "add 3 4\r", "squ\t 7\r", "history\r", "quit\r"]
+  inputs.each { |s| sleep 0.15; w.write(s); w.flush }
+end
+```
+
+PTY 経由で走らせると、**本物のキー入力と同等**のやり取りが再現できる。
+これは IRB / Reline の挙動を CI に乗せる時の正攻法。
+
+### 6.3 観察できたこと
+
+| 入力 | 観察 |
+| --- | --- |
+| `help\r` | コマンドハンドラが動き、`VOCAB` が列挙される |
+| `add 3 4\r` | `=> 7.0`(履歴に `add 3 4` が残る) |
+| `squ\t 7\r` | **Tab で `squ` が `square` に展開**された。`completion_proc` が効いている |
+| `history\r` | 直前 4 件 + `history` 自身が番号付きで列挙される |
+| `quit\r` | ループ脱出 |
+
+### 6.4 起動時の端末能力プロービング
+
+PTY の生出力を見ると、最初のプロンプト表示前に Reline が面白いことをしている:
+
+```
+[1G ▽ [6n [1G [K [6n
+```
+
+- `\e[1G` カーソルを行頭へ
+- `▽` を 1 文字描く
+- `\e[6n` Device Status Report(カーソル位置を返せ)を要求
+- 帰ってきた X 座標から、**その端末における `▽` の文字幅が 1 か 2 か**を測る
+- 結果を再度消して (`\e[K`) プロンプト描画に入る
+
+これが **ima1zumi が取り組んでいる「端末ごとの曖昧幅(ambiguous width)問題」
+の中核**。絵文字・全角記号・East Asian 文字の表示幅は端末依存で、Reline は
+実測して `Reline.ambiguous_width` を決める。`Reline::IOGate::ANSI` / 内部の
+`IOGate#cursor_pos_reqeust` が実装の入口。
+
+### 6.5 その他の観察された ANSI 制御
+
+| シーケンス | 意味 |
+| --- | --- |
+| `\e[?2004h` / `\e[?2004l` | bracketed paste mode on/off(貼付け時に `\e[200~...\e[201~` で囲う) |
+| `\e[?25l` / `\e[?25h` | カーソル非表示/表示(再描画ちらつき防止) |
+| `\e[6n` | Device Status Report(上述) |
+| `\e[1G` / `\e[K` | 行頭移動 / 行末クリア(再描画の基本) |
+
+**気づき**: Reline は毎回のプロンプト描画で「非表示 → クリア → 書き直し → 再表示」
+の順で更新している。Readline(C 実装)に比べると ANSI 制御がゴリゴリ発行されるが、
+**Ruby だけでマルチライン編集・補完を実現するために必要なコスト**。pure Ruby で
+ここまでやっていることがむしろすごい。
