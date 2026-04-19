@@ -66,3 +66,40 @@
 - Ruby 4.0.2 の system ruby と master の差分は「もう 4.1 を育て始めている」段階。つまり **master をビルドすると `ruby -v` が `4.1.0dev` になる**。合宿で「master の挙動」という時、それは 4.1.0dev のことを指す。
 - ガイドは「`ruby 4.1.0dev (...)`」と書いているが、この 4.1 は `include/ruby/version.h` の `RUBY_API_VERSION_MAJOR/MINOR` 由来。バージョン上げは master の途中で起きるので、ガイドの出力例は時期によって 4.2.0dev になったりする。本質は `-v` を見てのお楽しみ。
 - 「behind 348 commits」が 3 週間で溜まる程度には master の開発ペースは速い。合宿直前に fetch する運用がよい。
+
+## 02. autogen.sh → configure の観察
+
+スクリプト: `02_configure.sh`。`PREFIX=$HOME/.local/share/mise/installs/ruby/master`、`--disable-install-doc`。ログは `logs/`(gitignore)。
+
+| フェーズ | 時間 |
+|---|---|
+| autogen.sh | 1.8s |
+| configure | 36s |
+
+### configure summary(主要な行)
+
+| 項目 | 値 |
+|---|---|
+| with thread | pthread |
+| with coroutine | amd64 |
+| with modular GC | no |
+| enable shared libs | no |
+| optflags | -O3 -fno-fast-math |
+| debugflags | -ggdb3 |
+| install doc | no |
+| **YJIT support** | **yes** |
+| **ZJIT support** | **yes** |
+| RUSTC_FLAGS | `-g -C lto=thin -C opt-level=3 -C overflow-checks=on` |
+| BASERUBY -v | ruby 4.0.2(system、bootstrap 用) |
+
+warning / error はゼロ。依存検出(OpenSSL/readline/yaml/ffi/gmp)は詰まりどころになるログを出さないので、依存が足りていれば静かに通る。
+
+### 気づき
+
+- **ZJIT が default で有効**。これはガイド(rustc 1.58+ で YJIT が有効)より先の世界で、master には **ZJIT** という別の Rust 製 JIT が存在する(`zjit/` crate、`edition = "2024"`)。`configure.ac` の該当条件を読むと:
+  - YJIT: rustc **>= 1.58.0**
+  - ZJIT: rustc **>= 1.85.0**(2024 edition が必要)
+  手元の rustc 1.85.0 はこの ZJIT の最低ラインに**ちょうど**乗っている。Debian 13 (trixie) 標準 apt に救われた形だが、Ubuntu 22.04 LTS 標準 apt(1.75 付近)だと YJIT は通っても ZJIT は落ちる。ガイドの「apt が古すぎたら rustup」は、**YJIT だけを指すメッセージになっているが、今は ZJIT のために rustup が必要な層が増えている**。
+- `BASERUBY` に system の 4.0.2 が使われる。master のビルドには**既存の ruby が必要**(bootstrap)なので、まっさらなマシンだと apt の `ruby` も入れる必要がある。ガイドは Ruby が既に手元にある前提で書かれている。
+- shared libs が `no`(static)なのが default。`--enable-shared` を指定すると `libruby.so` が別れて mkmf の C 拡張ビルド時間に効くが、default は static。ガイドは触れていない領域。
+- `modular GC: no` は、外付けの alternative GC(MMTk 等)をビルド時に組み込む仕組み。合宿で触るトークなら `--with-modular-gc` を立てる配線になる。これはガイドに出てきていない。
