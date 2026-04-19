@@ -135,3 +135,106 @@ IRB 1.16.0 の組み込みコマンドは **7 カテゴリ・37 件**。`IRB::Co
   で alias ごとに `NO_OVERRIDE` / `OVERRIDE_PRIVATE_ONLY` / `OVERRIDE_ALL` を指定。
   これは「ユーザの `ls` 変数と組み込み `ls` コマンドのどちらを優先するか」を
   制御する(`command/internal_helpers.rb` と `Command.execute_as_command?` 参照)。
+
+## 05. 拡張コマンドを自作する (`05_custom_command.rb`, `06_help_integration.rb`)
+
+### 5.1 Command(副作用ベース)
+
+```ruby
+class CountMethods < IRB::Command::Base
+  category    "Camp"
+  description "引数のクラスで定義されたメソッドを継承元ごとに集計する"
+  help_message <<~HELP
+    Usage: count_methods <expr>
+    ...
+  HELP
+
+  def execute(arg)
+    obj   = @irb_context.workspace.binding.eval(arg.to_s.strip)
+    klass = obj.is_a?(Module) ? obj : obj.class
+    # ... テーブル表示
+  end
+end
+IRB::Command.register(:count_methods, CountMethods)
+```
+
+実行結果(`count_methods Integer` で Integer のメソッドを owner 別に):
+
+```
+  Integer                         65
+  Kernel                          37
+  Numeric                         29
+  BasicObject                      7
+  Comparable                       2
+  PP::ObjectMixin                  2
+  (total)                        142
+```
+
+- `@irb_context` は `IRB::Command::Base#initialize(irb_context)` で渡される
+  `IRB::Context` オブジェクト。現在の binding は `@irb_context.workspace.binding`。
+- 引数 `arg` は **行末までの文字列**(parse されていない生の引数)。Ruby 式として
+  評価したければ自分で `binding.eval(arg)` する。**コマンドは Ruby 構文を受けない
+  「シェル的な命令」**というのが設計思想。
+- `category` を指定すると `help` のテーブルにその名前でセクションが生え、
+  自作コマンドがちゃんと列挙される。`description` は 1 行、`help_message` は
+  `help <名前>` で表示される複数行 doc。
+
+### 5.2 HelperMethod(戻り値ベース)
+
+```ruby
+class SelfClass < IRB::HelperMethod::Base
+  description "現在のトップレベル self の class を返す"
+  def execute
+    IRB.CurrentContext.workspace.binding.receiver.class
+  end
+end
+IRB::HelperMethod.register(:self_class, SelfClass)
+```
+
+**落とし穴**: `IRB::HelperMethod::Base` は Singleton で、**`@irb_context` は渡されない**。
+最初 Command と同じ `@irb_context.workspace...` と書いて `NoMethodError: undefined
+method 'workspace' for nil` を食らった。`IRB.CurrentContext` をグローバルに引くのが正しい。
+
+`workspace.rb:167-179` の `HelpersContainer#install_helper_methods` を読むと、
+helper は `define_method name do |*args, **opts, &block|
+helper_method_class.instance.execute(*args, **opts, &block) end` で main に
+install されている。**main で直接呼べるメソッド**として生えるので `self_class` と
+書くだけで呼べるし、`self_class.ancestors.first(3)` のようにチェインもできる。
+
+### 5.3 Command と HelperMethod の使い分け
+
+| 軸 | Command | HelperMethod |
+| --- | --- | --- |
+| 呼び方 | 行頭に名前を書く(シェル的) | Ruby メソッド呼び出し |
+| 引数 | 行末までの生文字列 1 つ | 通常の Ruby 引数 |
+| 戻り値 | 使われない | そのまま評価値になる |
+| context | `@irb_context` が渡る | 自分で `IRB.CurrentContext` を引く |
+| 用途 | `ls foo`, `show_source Foo#bar`, `edit` | `conf`, 現在のオブジェクトを返す系 |
+
+**判断基準**: 結果を `.` で繋いで使いたい / 変数に束縛したいなら HelperMethod、
+単独で副作用を起こすコマンドなら Command。
+
+### 5.4 新 API と旧 API の差
+
+- 旧: `class Foo < IRB::ExtendCommand::Nop` + `IRB::ExtendCommandBundle.def_extend_command`
+- 新: `class Foo < IRB::Command::Base` + `IRB::Command.register(:name, Foo)`
+- `IRB::ExtendCommand = IRB::Command`、`IRB::Command::Base` 内の `Nop = Base` なので
+  **旧名前でも動く**。が、新 API のほうが `category` / `description` / `help_message` が
+  ファーストクラスで、`help <cmd>` にそのまま繋がる。**新規に書くなら新 API 一択**。
+
+### 5.5 `help` 出力への統合 (`06_help_integration.rb`)
+
+自作 Command は `category "Camp"` と書くだけで、`help` コマンドの出力に
+新しいセクションとして現れる:
+
+```
+Camp
+  camp_hello     合宿挨拶
+
+Helper methods
+  conf           Returns the current IRB context.
+  camp_size      合宿 helper: 42 を返すだけ
+```
+
+- category を指定しないと `"No category"` セクションに入る(あまり見栄えよくない)。
+- HelperMethod は常に `"Helper methods"` セクション固定(category の概念がない)。
