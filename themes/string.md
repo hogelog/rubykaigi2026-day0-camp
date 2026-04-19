@@ -29,7 +29,7 @@
 
 - `Encoding::Converter` を使って複雑な変換(Shift_JIS ↔ UTF-8、BOM 付き UTF-16 など)を書く。UTF-16 は BOM 付き BE、UTF-16BE / UTF-16LE は BOM 無しでエンディアン固定、という違いを手でバイト列を見て確認する
 - `String#==` と `#eql?` と `#hash` の関係を実験で確かめる。特に **ASCII-only な文字列は encoding が違っても `eql?` / `hash` が一致**する(UTF-8 Hash に US-ASCII キーでアクセスできる)が、非 ASCII だと encoding 違いは別値扱いになることまで
-- ベンチマークで `"foo" + "bar"` と `"foo" << "bar"` と `Array#join` などの差を見る。**warmup を入れ、`RUBY_DESCRIPTION` を必ず結果に併記**する。`+` / `+=` はループで繋ぐと O(N²) になり、`<<` や `join` との差が 3 桁出ることがある。`benchmark-ips` を入れていなくても stdlib の `Benchmark.realtime` で十分実験できる
+- ベンチマークで `"foo" + "bar"` と `"foo" << "bar"` と `Array#join` などの差を見る。**warmup を入れ、`RUBY_DESCRIPTION` を必ず結果に併記**する。`+` / `+=` はループで繋ぐと O(N²) になり、`<<` や `join` との差が 3 桁出ることがある
 
 ### 上級
 
