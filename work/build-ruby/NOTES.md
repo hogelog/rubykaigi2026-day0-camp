@@ -142,3 +142,75 @@ warning / error はゼロ。依存検出(OpenSSL/readline/yaml/ffi/gmp)は詰ま
 - **`RubyVM::YJIT` / `RubyVM::ZJIT` の定数は見える**。登録自体は built-in 時点で済んでいる。実際に `.enable` して JIT コンパイルが走るかは別問題で、今回のプローブでは踏み込んでいない。
 - **`+GC` flag が miniruby 側に無い**。system ruby 4.0.2(Debian パッケージ)は modular GC framework 有効でビルドされているが、こちらは `configure: modular GC: no` を選んだためマーカーが落ちている。`+GC` は「モジュラ GC を差し替えられる世界」のサイン。
 - miniruby は「構文を食って評価できる」最小単位の ruby であって、「rubygems も stdlib も無い Ruby 処理系」。あとから全部配られる。ブートストラップの順番を身体で知る入口として、`make miniruby` だけ先に走らせるのはすごく良い学習材料。
+
+## 05. make(フルビルド)
+
+スクリプト: `05_make_full.sh`。miniruby の後段、拡張 (`enc/*`, `ext/*`) と stdlib を組んで最終 `ruby` を作る。
+
+| 項目 | 値 |
+|---|---|
+| wall 時間 | 1m37s(miniruby 後) |
+| user 時間 | 2m22s |
+| ruby サイズ | 74MB(miniruby とほぼ同じ) |
+| 依存 .so | 8 個 |
+| enc/*.so | **61 個** |
+| 拡張 .so 合計 | **161 個**(enc 61 + 非 enc 100) |
+
+`ruby` バイナリ自体は miniruby とサイズがほぼ変わらない。差は `.ext/**/*.so`(合計 **161 個**)に出る。非 enc 100 個のうち `openssl.so` / `digest.so` / `date_core.so` / `bigdecimal.so` 等が stdlib の C 拡張、残りは bug/test 用や内部用 helper。
+
+### ビルドツリーの ./ruby を直に使うと詰まる
+
+フル `make` 後でも `~/repos/ruby/ruby` を直接実行すると:
+
+```
+`RubyGems' were not loaded.
+`error_highlight' was not loaded.
+`did_you_mean' was not loaded.
+`syntax_suggest' was not loaded.
+```
+
+と 4 連発の警告が出て、`require 'json'` すら **LoadError**。`$LOAD_PATH` は **install 先の PREFIX**(まだ存在しないパス)を指しているため、stdlib を一切探せない。
+**ビルドツリーの `./ruby` は `make install` 前は使い物にならない**のが原則で、合宿で master を触るなら install まで一気にやる。
+
+## 06. make install
+
+スクリプト: `06_make_install.sh`。PREFIX=`$HOME/.local/share/mise/installs/ruby/master`。
+
+| 項目 | 値 |
+|---|---|
+| wall 時間 | 32s |
+| bin/ のコマンド数 | 14(install 直後) |
+| lib/ruby 以下 *.rb | 1,393 |
+| lib/ruby 以下 *.so | 94 |
+| gems/ 数 | 81 |
+| 総サイズ | **340MB**(`--disable-install-doc` でも) |
+
+インストール後にプローブをかけ直すと、すべてグリーン(json 2.19.4, openssl, bigdecimal, fileutils OK、Encoding 103 件、$LOAD_PATH 10 件、警告ゼロ)。これが「本来の ruby」。
+
+### 詰まりどころ: bundled gem の取りこぼし
+
+`make install` の summary に:
+
+```
+skipped bundled gems:
+    debug-1.11.1.gem   extensions not found or build failed debug-1.11.1
+    rbs-4.0.2.gem      extensions not found or build failed rbs-4.0.2
+    win32ole-1.9.3.gem extensions not found or build failed win32ole-1.9.3
+```
+
+`win32ole` は Linux で常に落ちるので無視でよい。**問題は `rbs` と `debug`**。bin/ から `rdbg` と `rbs` が欠落し、合宿で TypeProf や Debug を触る人は入口で詰まる。
+
+回避策は自明で、**`gem install` で .gem ファイルから入れ直せば通る**:
+
+```sh
+gem install $HOME/repos/ruby/gems/debug-1.11.1.gem
+gem install $HOME/repos/ruby/gems/rbs-4.0.2.gem
+```
+
+手元ではこれで `rdbg 1.11.1` / `rbs 4.0.2` が bin/ に増えた。
+`make install` 中は「自分自身を install しきっていない ruby」で C 拡張をビルドしようとして落ちているので、install 完了後にリトライすれば問題なく通る、というメンタルモデルで説明できる(たぶん)。
+
+### 気づき
+
+- `./ruby -v` から miniruby と同じく `+PRISM [x86_64-linux]`。`+GC` / `+YJIT` / `+ZJIT` のようなマーカーは出ない。system の Debian 4.0.2 は `+PRISM +GC` と出ていたので、`+GC` マーカーは modular GC framework 有効化時(`--enable-shared` との組み合わせ?)限定かもしれない。
+- `lib/ruby/4.1.0+1/x86_64-linux` のようにバージョンディレクトリに `+1` が付いている。これは ABI suffix(`include/ruby/internal/abi.h`)で、master の途中で ABI が割れた時の弁。stable リリースには付かない。
