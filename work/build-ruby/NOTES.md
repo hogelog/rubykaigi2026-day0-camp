@@ -103,3 +103,42 @@ warning / error はゼロ。依存検出(OpenSSL/readline/yaml/ffi/gmp)は詰ま
 - `BASERUBY` に system の 4.0.2 が使われる。master のビルドには**既存の ruby が必要**(bootstrap)なので、まっさらなマシンだと apt の `ruby` も入れる必要がある。ガイドは Ruby が既に手元にある前提で書かれている。
 - shared libs が `no`(static)なのが default。`--enable-shared` を指定すると `libruby.so` が別れて mkmf の C 拡張ビルド時間に効くが、default は static。ガイドは触れていない領域。
 - `modular GC: no` は、外付けの alternative GC(MMTk 等)をビルド時に組み込む仕組み。合宿で触るトークなら `--with-modular-gc` を立てる配線になる。これはガイドに出てきていない。
+
+## 03. make miniruby
+
+スクリプト: `03_make_miniruby.sh`。`make -j4 miniruby`。`nproc=4` の VM 想定。
+
+| 項目 | 値 |
+|---|---|
+| wall 時間 | 2m43s |
+| user 時間 | 4m52s(並列が効いている) |
+| サイズ | 74MB(`./miniruby` バイナリ) |
+| 依存 .so | 8 個(`ldd miniruby`) |
+| version 文字列 | `ruby 4.1.0dev (2026-04-19T07:19:51Z master f39318083e) +PRISM [x86_64-linux]` |
+
+`make miniruby` でも `yjit.c` / `zjit.c` がコンパイルされ `libruby.a` にリンクされる。つまり **miniruby にも YJIT/ZJIT の実体コードは入っている**。
+
+## 04. miniruby と system ruby で何ができるか
+
+スクリプト: `04_miniruby_vs_ruby.rb`(どちらでも動く単一ファイル)。5 軸のプローブ。
+
+| プローブ | system ruby 4.0.2 | miniruby (master) |
+|---|---|---|
+| `RUBY_DESCRIPTION` 末尾 | `+PRISM +GC [x86_64-linux-gnu]` | `+PRISM [x86_64-linux]` |
+| `defined? Gem` | constant | constant |
+| `require 'json'` | ok (2.18.0) | **LoadError** |
+| `require 'openssl'` | ok | **LoadError** |
+| `require 'bigdecimal'` | ok | **LoadError** |
+| `require 'fileutils'` | ok | **LoadError** |
+| `Encoding.list.size` | 103 | **12** |
+| `defined? RubyVM::YJIT` | constant | constant |
+| `defined? RubyVM::ZJIT` | constant | constant |
+| `$LOAD_PATH.size` | 10 | **0** |
+
+### 気づき
+
+- **`$LOAD_PATH` が空**。これが「miniruby は require がほぼ通らない」の正体。stdlib のパスは `make` のもっと後段(`.rbinc` 展開 / `rbconfig.rb` 生成 / 拡張ビルド)で配られる。
+- **Encoding が 12 しかない**。miniruby にあるのは `ASCII-8BIT / UTF-8 / US-ASCII / UTF-16/32-{LE,BE}` などの built-in 数件のみ。残り 90+ の encoding(`Shift_JIS`, `EUC-JP`, `ISO-8859-*` …)は `enc/*.so` を後段でビルドして register する。つまり **miniruby 単体では日本語の Shift_JIS などは open できない**。
+- **`RubyVM::YJIT` / `RubyVM::ZJIT` の定数は見える**。登録自体は built-in 時点で済んでいる。実際に `.enable` して JIT コンパイルが走るかは別問題で、今回のプローブでは踏み込んでいない。
+- **`+GC` flag が miniruby 側に無い**。system ruby 4.0.2(Debian パッケージ)は modular GC framework 有効でビルドされているが、こちらは `configure: modular GC: no` を選んだためマーカーが落ちている。`+GC` は「モジュラ GC を差し替えられる世界」のサイン。
+- miniruby は「構文を食って評価できる」最小単位の ruby であって、「rubygems も stdlib も無い Ruby 処理系」。あとから全部配られる。ブートストラップの順番を身体で知る入口として、`make miniruby` だけ先に走らせるのはすごく良い学習材料。
