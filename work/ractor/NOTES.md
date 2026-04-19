@@ -37,3 +37,29 @@ RubyKaigi 2026 Day 0 合宿の予習として、Ruby 4.0 で刷新された Ract
 - (e) の copy は **deep**。`<<` で要素を足しても送り手側には波及しない。
 - (f) の move は「送った瞬間に元を無効化する」ゼロコピーセマンティクス。大きな配列やバッファを渡すなら move。ただし **送り手で再利用しようとすると `Ractor::MovedError`** なので、「もう使わない」保証が取れる時限定。
 - (d) のように Ractor 内で未捕捉例外が出ると、STDERR に `#<Thread:… run> terminated with exception (report_on_exception is true):` の形で噴き出す。`Ractor#value` でまとめて受ける構えなら見た目は冗長。
+
+## 03. shareable? と make_shareable
+
+`work/ractor/03_shareable.rb` で代表的なオブジェクトの `frozen?` / `Ractor.shareable?` を一覧にした。
+
+| 値 | frozen? | shareable? |
+| --- | --- | --- |
+| `nil` / `true` / `1` / `1.5` / `:sym` | true | **true** |
+| `"literal"` (frozen_string_literal: true) | true | true |
+| `+"dyn"` | false | false |
+| `[1,2,3]` | false | false |
+| `[1,2,3].freeze` | true | **true** |
+| `[[1]].freeze` (外だけ freeze、内側は未) | true | **false** |
+| `{a:1}.freeze` | true | true |
+| `Object.new` | false | false |
+| `Object.new.freeze` | true | **true** |
+| `1..10` (Range) | true | true |
+| `->{}` | false | false |
+| `Mutex.new` | false | false |
+
+気づき:
+- **shareable = 「frozen かつ推移的に全部 shareable」**。`[[1]].freeze` は外だけ freeze で内側が生きているので弾かれる。`.freeze` と shareable は別物。
+- `make_shareable(obj)` は **再帰的に全部 freeze** してから shareable にする。その場で元のオブジェクトを破壊的に凍らせるので、**他所で可変のまま使われていると壊れる**。
+- 破壊したくない時は `make_shareable(obj, copy: true)`。**frozen な deep copy** を返し、元はそのまま。shareable にしたい既存の設定値などを安全に閉じ込める常道。
+- **`Mutex.new` は `make_shareable` できない**(`Ractor::Error: can not make shareable object for ...`)。**同期プリミティブを Ractor 間で共有する従来の発想は崩れる**ので、設計は Port と copy/move ベースに組み替える必要がある。
+- closure を持つ lambda(`-> { outer }`) は `Ractor::IsolationError: Proc's self is not shareable`。**「外の環境を拾っている Proc は shareable にならない」**。クラス定数や定数関数参照だけで閉じる Proc(`->(x) { x * 2 }`)は shareable にできる。
