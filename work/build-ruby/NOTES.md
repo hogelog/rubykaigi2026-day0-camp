@@ -233,3 +233,25 @@ gem install $HOME/repos/ruby/gems/rbs-4.0.2.gem
 - 一方 `mise which` と `mise shell` は「mise がちゃんと管理している扱いじゃないと動かない」経路で、少し期待を裏切る。**`mise exec` と `mise.toml` 経由なら問題なく切り替わる**のが実務的な答え。
 - `mise.toml` は新規作成直後は **`mise trust <path>`** が要る(security feature)。ガイドには触れられていない 1 行。
 - shell 切替派の人が `mise shell` でハマるので、合宿ガイドでは **`mise exec` または `mise.toml`** を前面に推すほうが安全。
+
+## 08. YJIT / ZJIT が実際にコード生成まで走るか
+
+スクリプト: `08_jit_probe.rb` + `08_jit_probe.sh`。fib(35)(~10M 再帰)を interp / YJIT / ZJIT の 3 モードで回して時間と compiled_* を見る。
+
+### 計測結果(同一マシン、複数回実行して安定した値)
+
+| モード | fib(35) 時間 | JIT 速度比 | 備考 |
+|---|---|---|---|
+| interpreter | 0.808s | 1.00x | ベースライン |
+| `--yjit` | 0.176s | **4.59x** | `compiled_iseq=1, block=11, branch=17` |
+| `--zjit` | 0.132s | **6.12x** | `compiled_iseq=2`(iseq を 2 つに割っている) |
+| `--yjit --yjit-stats` | 3.858s | 0.21x(!!) | stats instrumentation で interp より遅い |
+| `--zjit --zjit-stats-quiet` | 4.486s | 0.18x(!!) | 同上 |
+
+### 気づき
+
+- **`--yjit-stats` / `--zjit-stats-quiet` は計測用で、速度を測る用途では使えない**。カウンタのフックが入るぶん fib(35) で ~5x 遅くなる。「JIT の効果を数字で見る」と「JIT の内部挙動を数字で見る」は別フラグで別の日に、が正解。
+- この benchmark では **ZJIT が YJIT より速い**。ZJIT は method-based JIT(`--help` にそう書いてある)で、単純な関数再帰では YJIT より向いている可能性がある。一般論として ZJIT が常に勝つわけではない(まだ 0.0.1)。
+- ZJIT は `--zjit-stats` を付けなくても `RubyVM::ZJIT.stats` が `compile_time_ns` / `compiled_iseq_count` 等の基本値を返す。YJIT の `runtime_stats` は `--yjit-stats` が無いと `nil`。API の粒度がここだけ揃っていない。
+- `.insns_compiled` は YJIT 固有で、引数に `iseq` / Method / Proc を取る(0 引数は `ArgumentError`)。master では `def self.insns_compiled(iseq)` に変わっている。「YJIT で何 insn 走った?」はこれで個別 iseq ごとに見るのが最新の流儀。
+- ビルドが正しく通っていれば **追加のフラグを一切付けなくても `--yjit` / `--zjit` で JIT は即動く**。`configure` の summary で YJIT/ZJIT が `yes` に出ていることを信じてよい。
