@@ -91,3 +91,35 @@ end
   - **新規コードに RBS 雛形を付けたい** → `rbs prototype rb` で枠組みを作り、型を手で埋める
   - **既存 gem の型を書き始めたい**(DSL で動的にメソッドが生えるなど) → `rbs prototype runtime`
   - **本気で型を推論させて型チェックしたい** → `typeprof`(ただし呼び出し側のコードが必要)
+
+## 03. 推論が外れるケース(メタプロ / Duck typing)
+
+`work/typeprof/03_metaprogramming.rb` で、よく使う動的機能に typeprof 0.31 をかけた。
+
+| ケース | typeprof の挙動 | 備考 |
+| --- | --- | --- |
+| (a) `define_method(:name) { ... }` を `each` で撒く | **クラスが空のまま**。呼び出し側が `undefined method: DynamicMethods#ping` | クラス定義の中でのループは抽象実行されない |
+| (b) `method_missing` + `respond_to_missing?` | `method_missing: (untyped, *untyped) -> String` は出るが、**`.whatever` 呼び出しは `undefined method`** | method_missing はただのメソッドとしてしか見ない |
+| (c) `send(method_name, arg)` | `def call: (:greet, String) -> untyped`、戻り値は **untyped に落ちる** | 引数は **シンボルリテラル `:greet`** として記録される(`Symbol` ではない) |
+| (d) `obj.respond_to?(:size)` で分岐 | `(Integer \| String \| [Integer, Integer, Integer]) -> Integer` | **ユニオン推論は効く**。`-1` と `obj.size` が両方 Integer なので合成は `Integer` |
+| (e) `Struct.new(:x, :y) do …` | クラスが生えず **`Point: untyped`**。内側の `def distance_from_origin` は **`Object` 直下**に出力 + `undefined method: Object#x` エラー | Struct 生成を追わないので `x` / `y` アクセサが生えない |
+| (f) `Data.define(:r, :g, :b) do …` | (e) と同じ。`RGB: untyped`、`luminance` は `Object` 直下。`0.299 * r` で `failed to resolve overloads` | Data.define も追わない |
+
+気づき:
+
+- **TypeProf が諦めるのは「実行時に形が決まる」構造**で、(a) define_method、(e) Struct、
+  (f) Data がその代表。**クラスのかたち自体**がメタプロで作られるとお手上げ。
+  逆に言えば、**RBS を人間が書いて `sig/` に置く**ことでここだけ補うのが実運用。
+- (c) `send` の **戻り値は untyped** になる。`method_name` が `:greet` というシンボル
+  リテラルとして残っているのに、そこから呼ぶ先の `greet` まで辿ってくれない。
+  これは「リテラル値依存で分岐できる高度な解析」の範囲で、現 TypeProf は踏み込まない。
+- (d) **duck typing は `respond_to?` 込みで意外に効く**。特に「その分岐内で確実にそのメソッド
+  が呼べる」だけ見て型を出す。ただし `read_size` の引数型が **`[Integer, Integer, Integer]`
+  のタプル**(実引数の `[1,2,3]` 由来)で残っていて、他の長さの Array を渡すと未対応になる
+  のは 01 と同じ癖。
+- (b) `method_missing` の戻り値 `String` は **`method_missing` 本体** の戻り値を
+  そのまま RBS にしてくれるので、**`respond_to_missing?` が true を返す前提で
+  `#whatever` を `method_missing` 経由で飛ばしてみる**みたいな合成はしない。これをやるには
+  人間が `sig/` 側に `def whatever: ...` を書き足す必要がある。
+- `--show-errors` が無いと上記のエラー群は**沈黙する**。雛形生成としてだけ使うなら
+  エラー無しで、RBS の質を確かめたい時は付ける、という二段構えが実用的。
