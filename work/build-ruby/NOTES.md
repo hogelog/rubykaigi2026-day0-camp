@@ -48,3 +48,21 @@
 - Debian 13 (trixie) 標準の apt で `rustc 1.85` が入る。ガイドが求める 1.58 に余裕で届くので、trixie 上では **rustup を別途入れる必要がない**(macOS の Homebrew や古い Ubuntu の rustup 誘導は、ここではカットできる)。
 - `bison 3.8.2` / `autoconf 2.72` も問題なし。macOS の「bison 古すぎ罠」は Linux 側では踏まない。
 - 依存総量は体感 200MB 弱(update + install)。合宿会場の Wi-Fi で初回に入れるとキツいので、事前に済ませるべき実作業として最初にくる。
+
+## 01. ruby/ruby を origin/master に追随
+
+スクリプト: `01_fetch_master.sh`。`~/repos/ruby` を fast-forward only で追随させ、前後の HEAD / API バージョンを出力する。
+
+| 項目 | 値 |
+|---|---|
+| fetch 前 HEAD | `634707a725`(Mar 28 時点、origin/master から 348 commits behind) |
+| fetch 後 HEAD | `f39318083e`(2026-04-19 07:19 UTC、[DOC] Update bundled gems list) |
+| API バージョン | 4.1(= master は **Ruby 4.1.0dev** を育てている) |
+| RUBY_PATCHLEVEL | -1(dev ビルドのマーカー) |
+| master 総コミット数 | 98,411 |
+
+### 気づき
+
+- Ruby 4.0.2 の system ruby と master の差分は「もう 4.1 を育て始めている」段階。つまり **master をビルドすると `ruby -v` が `4.1.0dev` になる**。合宿で「master の挙動」という時、それは 4.1.0dev のことを指す。
+- ガイドは「`ruby 4.1.0dev (...)`」と書いているが、この 4.1 は `include/ruby/version.h` の `RUBY_API_VERSION_MAJOR/MINOR` 由来。バージョン上げは master の途中で起きるので、ガイドの出力例は時期によって 4.2.0dev になったりする。本質は `-v` を見てのお楽しみ。
+- 「behind 348 commits」が 3 週間で溜まる程度には master の開発ペースは速い。合宿直前に fetch する運用がよい。
