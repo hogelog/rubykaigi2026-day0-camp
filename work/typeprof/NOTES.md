@@ -156,3 +156,73 @@ end
   実用では十分だが、generic な `map` 的 API を書きたい人には厳しい。
 - (a) `pick` の戻り値記法 `(Integer | String)?` は **RBS の糖衣**で、意味は
   `(Integer | String) | nil`。複数の値 + nil を畳む時に頻出するので目に慣らしておく。
+
+## 05. `#:` シグネチャアノテーション(v0.30+ Ruby Scripts モード)
+
+mame の RubyKaigi 2025 "Writing Ruby Scripts with TypeProf" の本丸。
+**Ruby ファイルの `def` の直前に `#: <RBS 型>` と書くと** 型として扱われる。
+(ソース: `lib/typeprof/core/ast/method.rb:3 get_rbs_comment_before`。
+`#:` で始まるコメントを `def` 直前で集めて `RBS::Parser.parse_method_type` に投げる。)
+
+`work/typeprof/05_rbs_annotation.rb` の出力:
+
+```
+# (22,0)-(22,6):wrong type of arguments           # (B) square("oops") → Integer 期待
+# (27,2)-(27,3):expected: Integer; actual: String  # (C) 本体が String を返す
+# (52,2)-(52,14):expected: Array[...]; actual: Array[untyped]
+# (56,26)-(56,32):expected: Integer; actual: String # (F) ブロックの戻り値違反
+```
+
+気づき:
+
+- **動く**: (A)(B)(C)(F)(G) 相当 — **位置引数の型**、**戻り値の型**、**ブロックシグネチャ**
+  まで `#:` で書ける。宣言と実装の不一致は **`expected: … ; actual: …`** で
+  ちゃんと検出される。Steep を別途立てなくてもこのレベルの型チェックは素の typeprof
+  単体で回る、という**体験の軽さ**が v0.30+ の売り。
+- **怪しい**: **キーワード引数の型が `#:` アノテーションで効いていない**。
+  `(String, ?loud: bool) -> String` と書いても、TypeProf の出力 RBS は
+  **`?loud: false`**(`loud: false` のデフォルト値の**値型**)になり、
+  呼び出し側 `greet("c", loud: "truthy")` で **型エラーが出ない**。
+  required 版 `(String, loud: bool)` + `def greet(name, loud:)` でも出力は
+  `(String, loud: untyped)` に落ちる。**アノテーションのキーワード型指定だけが
+  反映されない**。0.31.1 の制約として覚えておく。
+- **アノテーションが無いメソッドは従来通り推論**される。混在可能なので、
+  DSL 的に「型を書きたい境界だけ書いて、残りは推論」という漸進導入ができる。
+- `map_ints` の本体 `xs.map(&blk)` で **`expected: Array[Integer]; actual: Array[untyped]`**
+  エラーが出た。`&blk` 変換で block のシグネチャ情報が一度 untyped に落ちる挙動らしい。
+  明示的に `xs.map { |x| blk.call(x) }` と書き直せば解消するか、は 次の課題。
+- **`#:` のコメント形式**は **`#` の直後に `:`**(スペース無し)。`# :` だと普通のコメント扱いで無視される。typeprof 0.31 固有。RBS Inline 構文(ruby-rbs/rbs_inline gem 由来で `# @rbs` 系)とは**別の流派**。
+
+## 06. `sig/` ディレクトリに RBS を外出しする流儀
+
+`work/typeprof/06_sig_dir.rb` + `work/typeprof/sig/06_sig_dir.rbs` のペアで、
+`typeprof --show-errors 06_sig_dir.rb sig/06_sig_dir.rbs` を走らせた結果:
+
+```
+# (19,2)-(19,5):wrong type of arguments  # c.add("oops", 2) を検出
+class Calculator
+  def add: (Integer, Integer) -> Integer
+  def divide: (Integer, Integer) -> Integer
+end
+```
+
+気づき:
+
+- **RBS ファイルを引数に混ぜるだけ**で型情報として読み込まれ、呼び出し側が
+  型チェックされる。実装側のコードを汚さずに型を与える古典スタイル。
+- `typeprof --init` を叩くとカレントに **`typeprof.conf.jsonc`** が生成される:
+  ```jsonc
+  {
+    "typeprof_version": "experimental",
+    "rbs_dir": "sig/",
+    "analysis_unit_dirs": []
+  }
+  ```
+  `rbs_dir: "sig/"` が既定値。**プロジェクトに置けば `typeprof` をファイル指定なしで
+  叩ける** はずだが、未検証(analysis_unit_dirs を設定する必要がある様子)。
+- `c.divide(10, 0)` のようなゼロ除算は**型エラーとしては出ない**。TypeProf は
+  「Integer が来る」ことしか見ておらず、値の範囲は関知しない。これは当たり前だが
+  「型チェックは実行時エラーを全部拾ってくれるわけではない」リマインダとして有用。
+- Ruby スクリプトに `#:` を書く 05 の流儀と、sig/*.rbs に外出しする 06 の流儀は
+  **併用可能**。新しいコードは `#:` で書き、外部 gem / 既存資産は `sig/` で補う、
+  という合わせ技ができる。

@@ -1,0 +1,4 @@
+class Calculator
+  def add: (Integer, Integer) -> Integer
+  def divide: (Integer, Integer) -> Integer
+end
