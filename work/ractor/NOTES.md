@@ -63,3 +63,28 @@ RubyKaigi 2026 Day 0 合宿の予習として、Ruby 4.0 で刷新された Ract
 - 破壊したくない時は `make_shareable(obj, copy: true)`。**frozen な deep copy** を返し、元はそのまま。shareable にしたい既存の設定値などを安全に閉じ込める常道。
 - **`Mutex.new` は `make_shareable` できない**(`Ractor::Error: can not make shareable object for ...`)。**同期プリミティブを Ractor 間で共有する従来の発想は崩れる**ので、設計は Port と copy/move ベースに組み替える必要がある。
 - closure を持つ lambda(`-> { outer }`) は `Ractor::IsolationError: Proc's self is not shareable`。**「外の環境を拾っている Proc は shareable にならない」**。クラス定数や定数関数参照だけで閉じる Proc(`->(x) { x * 2 }`)は shareable にできる。
+
+## 04. 旧 API (take / yield / receive_if) の非対応を実物で確認
+
+`work/ractor/04_old_api.rb` は Ruby 4.0 における**旧 API 撤去の証拠集め**と**新パターンへの書き換え手本**。
+
+| メソッド | Ruby 4.0.2 での状態 |
+| --- | --- |
+| `Ractor#take` | **NameError**(instance_method で拾えない) |
+| `Ractor.yield` | NameError |
+| `Ractor.receive_if` | NameError |
+| `Ractor.select` | 生存。引数が `*ports`(旧 `*ractors`)に変わった |
+| `Ractor::Port` | 新規。`<<` / `send` / `receive` / `close` / `closed?` / `inspect` |
+
+書き換え対応表:
+
+| 旧パターン | 新パターン |
+| --- | --- |
+| `r = Ractor.new { compute }; r.take` | `r = Ractor.new { compute }; r.value` |
+| producer が `Ractor.yield(x)` / main で `r.take` | producer が `port.send(x)` / consumer が `port.receive` |
+| `Ractor.select(r1, r2)` で Ractor を待つ | `Ractor.select(port1, port2)` で Port を待つ |
+
+気づき:
+- **旧 API は「非推奨」ではなく「存在しない」**。ネットの blog をそのまま写すと `NoMethodError` / `NameError` で即死するので、サンプルは 2025-06 以降のものに絞る。
+- **Port を main から Ractor に渡す**時も、**引数経由で渡すか、shareable な定数経由**でないと閉じ込められない。Port 自身は shareable。
+- `port.send(:done)` みたいな **センチネルで終端を伝える**のが自然な書き方になった。旧 `yield` + `take` では「Ractor がブロックを抜けた」が暗黙の終端だったが、Port ベースでは**送信者側が明示する**必要がある。
