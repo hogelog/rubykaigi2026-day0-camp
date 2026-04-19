@@ -86,17 +86,6 @@ Ractor 内で例外が起きると、親側が `#value` で拾う前に
 
 旧 `take` はすでに取った値を再度取ろうとすると例外(というか同期原語)だったが、**`value` は「ブロックの戻り値を返すアクセサ」**。**同じ Ractor に対して `value` を 2 回呼ぶと `Ractor::Error`** になる。長時間走るアプリで使い回す時の落とし穴になるので、**「一度だけ」**を強調しておきたい。
 
-### 8. 旧パターン → 新パターンの書き換え表がほしい
-
-ガイド本文に以下のような小さな対応表を置くだけで、旧 blog のサンプルから自分で変換できるようになる:
-
-| 旧(Ruby 3 系) | 新(Ruby 4.0) |
-| --- | --- |
-| `r = Ractor.new { ... }; r.take` | `r.value` |
-| producer: `Ractor.yield(x)` / main: `r.take` | producer: `port.send(x)` / consumer: `port.receive` |
-| `Ractor.select(r1, r2)`(Ractor 引数) | `Ractor.select(port1, port2)`(Port 引数) |
-| `Ractor.receive_if { ... }` | Port を種類別に分けて使う |
-
 ## 上級への入り口の設計
 
 - **「処理系のどこで判定しているか」** に踏み込むなら、`ruby/ruby` の `ractor.c` の `rb_ractor_make_shareable` / `obj_traverse_i` / `RB_OBJ_SHAREABLE_P` 近辺が出発点。ガイドに「この関数名を grep すれば入れる」と **具体的な指差し** があると、C ソースに飛び込む勇気が出る。
@@ -124,4 +113,4 @@ Ractor 内で例外が起きると、親側が `#value` で拾う前に
 
 ## まとめ
 
-全体として良くできたガイド。**`Ractor::Port#receive` が creator-only という制約**、**旧 → 新 API の置き換え表**、**Thread vs Ractor ベンチの期待値プレビュー**、**`make_shareable` の限界(特に Proc の self 問題)** の 4 点を足すと、合宿で手を動かす参加者が同じ壁にぶつかる時間を大幅に減らせそう。
+全体として良くできたガイド。**`Ractor::Port#receive` が creator-only という制約**、**Thread vs Ractor ベンチの期待値プレビュー**、**`make_shareable` の限界(特に Proc の self 問題)** の 3 点を足すと、合宿で手を動かす参加者が同じ壁にぶつかる時間を大幅に減らせそう。
