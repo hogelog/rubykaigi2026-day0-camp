@@ -53,8 +53,8 @@ RubyKaigi では毎年のように Ractor 関連のアップデートや、Racto
 Ractor は設計者である ko1(笹田耕一、STORES)が中心となって開発している領域。STORES Product Blog の解説が最新 API へのキャッチアップに最適。
 
 - **Ractor API の刷新について(ko1, 2025-06-24)**: https://product.st.inc/entry/2025/06/24/110606 — `take` / `yield` 廃止と `Ractor::Port` / `Ractor#join` / `Ractor#value` 導入の背景と使い方を設計者自身が解説。**まずここから読むと良い**
-- Ruby 公式ドキュメント: https://docs.ruby-lang.org/ja/latest/class/Ractor.html
-- Ractor 設計ドキュメント(ruby/ruby): https://github.com/ruby/ruby/blob/master/doc/ractor.md
+- Ruby 公式ドキュメント: https://docs.ruby-lang.org/en/master/Ractor.html
+- Ractor 設計ドキュメント(ruby/ruby): https://github.com/ruby/ruby/blob/master/doc/language/ractor.md
 - ko1 の RubyKaigi 過去発表: https://rubykaigi.org/2025/presentations/ko1.html など各年のアーカイブを辿ると Ractor の変遷がそのまま追える
 
 ## アウトプットのヒント
