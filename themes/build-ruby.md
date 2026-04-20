@@ -50,10 +50,13 @@ mise を使う場合(推奨):
 ```sh
 PREFIX="$HOME/.local/share/mise/installs/ruby/master"
 ./autogen.sh
-./configure --prefix="$PREFIX"
+mkdir build && cd build
+../configure --prefix="$PREFIX"
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 make install
 ```
+
+`build/` サブディレクトリに出して configure する out-of-tree build は本家の [building_ruby.md](https://github.com/ruby/ruby/blob/master/doc/contributing/building_ruby.md) でも推奨されている方式。生成物がソースと混ざらないので `rm -rf build` でリセットできる。
 
 rbenv / chruby / asdf を使っている場合は、それぞれの慣習に合わせて `~/.rubies/ruby-master` のようなパスを prefix に指定する。
 
@@ -85,7 +88,7 @@ ruby -v
 - **bison のバージョン違い** — macOS 同梱の bison では通らない。Homebrew 版を PATH に
 - **ccache が邪魔して再ビルドが変** — 疑わしいときは `make clean` から
 - **mise / rbenv の shim が古い ruby を指している** — `mise reshim` / `rbenv rehash` を忘れずに
-- **ビルドツリーの `./ruby` を直叩きすると動かない** — `$LOAD_PATH` にインストール先の prefix が焼き込まれていて、`make install` 前はその場所が存在しない。`` `RubyGems' were not loaded.`` の警告と共に `require` が軒並み落ちる。試すのは `$PREFIX/bin/ruby` のほう
+- **`build/ruby` を直叩きすると動かない** — `$LOAD_PATH` にインストール先の prefix が焼き込まれていて、`make install` 前はその場所が存在しない。`` `RubyGems' were not loaded.`` の警告と共に `require` が軒並み落ちる。試すのは `$PREFIX/bin/ruby` のほう
 - **`make install` で `debug` / `rbs` が skip される** — summary に `extensions not found or build failed debug-*.gem` / `rbs-*.gem` と出て、`rdbg` / `rbs` コマンドが bin/ から欠ける。install 完了後に `gem install <ruby-src>/gems/debug-*.gem` と `rbs-*.gem` を叩き直すと通る(インストール途中の ruby で C 拡張を組もうとして失敗している)
 
 ## 追加で試してみたいこと
