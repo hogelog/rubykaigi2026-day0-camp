@@ -50,7 +50,7 @@ mise を使う場合(推奨):
 ```sh
 PREFIX="$HOME/.local/share/mise/installs/ruby/master"
 ./autogen.sh
-./configure --prefix="$PREFIX" --disable-install-doc
+./configure --prefix="$PREFIX"
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 make install
 ```
