@@ -1,4 +1,4 @@
-# ruby/ruby master をビルドして自分のデフォルト ruby にしてみる
+# ruby/ruby master をビルドして触ってみる
 
 ## なぜやるのか
 
